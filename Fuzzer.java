@@ -11,6 +11,7 @@ public class Fuzzer {
     public static void main(String[] args) {
         if (args.length != 1) {
             System.err.println("Usage: java Fuzzer.java \"<command_to_fuzz>\"");
+            System.exit(1);
         }
         String commandToFuzz = args[0];
         String workingDirectory = "./";
