@@ -10,36 +10,38 @@ import java.util.stream.Stream;
 public class Fuzzer {
     public static void main(String[] args) {
         if (args.length != 1) {
-            System.err.println("Usage: java Fuzzer \"<command_to_fuzz>\"");
+            System.err.println("Usage: java Fuzzer <command_to_fuzz>");
             System.exit(1);
         }
         String commandToFuzz = args[0];
         String workingDirectory = "./";
 
         if (!Files.exists(Paths.get(workingDirectory, commandToFuzz))) {
-            throw new RuntimeException("Could not find command '%s'.".formatted(commandToFuzz));
+            System.err.printf("Error: Could not find command '%s'.%n", commandToFuzz);
+            System.exit(1);
         }
 
         String seedInput = "<html a=\"value\">...</html>";
-
         ProcessBuilder builder = getProcessBuilderForCommand(commandToFuzz, workingDirectory);
-        System.out.printf("Command: %s\n", builder.command());
+        System.out.printf("Command: %s%n", builder.command());
 
         List<Function<String, String>> mutators = List.of(
-            input -> input.replace("<html", "<htm"),                          // Corrupt opening tag
+            input -> input.replace("<html", "<htm"),                          // Corrupt tag
             input -> input + "</unclosed>",                                  // Add unclosed tag
             input -> input.replace("value", "💣"),                           // Insert unexpected Unicode
             input -> input.substring(0, input.length() / 2),                // Truncate input
             input -> input.replace(">", ""),                                // Remove closing brackets
-            input -> "<script>alert('xss')</script>",                       // Inject malicious code
-            input -> "<html><div></html>",                                  // Mismatched nested tags
-            input -> "<html a=!!@##>",                                      // Invalid attribute
+            input -> "<script>alert('xss')</script>",                       // Malicious code
+            input -> "<html><div></html>",                                  // Mismatched tags
+            input -> "<html a=!!@##>",                                      // Invalid attributes
             input -> "",                                                    // Empty input
-            input -> "<html>".repeat(1000)                                  // Extremely large input
+            input -> "<html>".repeat(1000)                                  // Large input
         );
 
         List<String> mutatedInputs = getMutatedInputs(seedInput, mutators);
         boolean foundCrash = runCommand(builder, seedInput, mutatedInputs);
+
+        // Exit with 0 if no crash was found, 1 otherwise
         System.exit(foundCrash ? 1 : 0);
     }
 
@@ -52,7 +54,7 @@ public class Fuzzer {
             builder.command("sh", "-c", command);
         }
         builder.directory(new File(workingDirectory));
-        builder.redirectErrorStream(true);
+        builder.redirectErrorStream(true); // Redirect stderr to stdout
         return builder;
     }
 
@@ -60,7 +62,7 @@ public class Fuzzer {
         boolean crashFound = false;
 
         for (String input : Stream.concat(Stream.of(seedInput), mutatedInputs.stream()).toList()) {
-            System.out.printf("Testing input: %s\n", input);
+            System.out.printf("Testing input: %s%n", input);
             try {
                 Process process = builder.start();
                 try (OutputStream stdin = process.getOutputStream()) {
@@ -70,14 +72,14 @@ public class Fuzzer {
 
                 int exitCode = process.waitFor();
                 String output = readStreamIntoString(process.getInputStream());
-                System.out.printf("Exit code: %d\nOutput:\n%s\n", exitCode, output);
+                System.out.printf("Exit code: %d%nOutput:%n%s%n", exitCode, output);
 
                 if (exitCode != 0) {
-                    System.err.printf("Crash detected with input: %s\n", input);
+                    System.err.printf("Crash detected with input: %s%n", input);
                     crashFound = true;
                 }
             } catch (Exception e) {
-                System.err.printf("Error while running command: %s\n", e.getMessage());
+                System.err.printf("Error while running command: %s%n", e.getMessage());
                 crashFound = true;
             }
         }
